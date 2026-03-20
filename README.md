@@ -4,6 +4,7 @@ Lightweight FastAPI RAG app with:
 - Pinecone retrieval
 - Mistral generation
 - Langfuse tracing + prompt management
+- SQLite-backed chat sessions/messages
 - Built-in web UI (`/`)
 
 ## Project Structure
@@ -13,6 +14,7 @@ Lightweight FastAPI RAG app with:
 - `ui/index.html`: frontend UI
 - `data/`: source text files for indexing
 - `.env`: local config and API keys
+- `rag_app.db`: local SQLite database (auto-created)
 
 ## Requirements
 
@@ -47,6 +49,7 @@ LANGFUSE_PROMPT_LABEL=production
 EVAL_FAITHFULNESS_THRESHOLD=0.7
 EVAL_RELEVANCE_THRESHOLD=0.7
 RETRIEVAL_K=3
+RAG_DB_PATH=./rag_app.db
 ```
 
 ## 1) Ingest Data into Pinecone
@@ -89,7 +92,7 @@ The app fetches this prompt dynamically and falls back to local template if unav
 ## API Endpoints
 
 - `POST /ask`
-  - Input: `{ "question": "..." }`
+  - Input: `{ "question": "...", "session_id": "optional" }`
   - Returns: answer, context, chunks (with `similarity_score`), evaluation, similarity summary, trace_id
 
 - `POST /feedback`
@@ -102,9 +105,16 @@ The app fetches this prompt dynamically and falls back to local template if unav
   - Input: `{ "qa_id"|"trace_id", "answer"?, "rating"? }`
   - Applies local overrides for UI history edits
 
+- `GET /sessions`
+  - List chat sessions from SQLite
+
+- `GET /sessions/{session_id}/messages`
+  - List messages for a session from SQLite
+
 ## UI Notes
 
 - Ask tab: question, answer, eval, context, chunks, similarity
+- Ask tab: includes `New Chat`, session switcher, and per-session transcript
 - History tab: records from Langfuse, rating controls, edit action
 
 ## Troubleshooting

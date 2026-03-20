@@ -31,6 +31,12 @@
 
     <section id="ask-section">
       <div class="row">
+        <button onclick="newChat()">New Chat</button>
+        <label for="session-select" class="muted">Session:</label>
+        <select id="session-select" onchange="onSessionChange()"></select>
+        <span id="session-status" class="muted"></span>
+      </div>
+      <div class="row">
         <textarea id="q" placeholder="Type your question..."></textarea>
       </div>
       <div class="row">
@@ -50,6 +56,10 @@
         <pre id="chunks"></pre>
         <div class="label">Trace ID</div>
         <pre id="trace"></pre>
+      </div>
+      <div class="row">
+        <div class="label">Session Messages</div>
+        <pre id="session-messages"></pre>
       </div>
       <div class="row">
         <div class="label">Feedback</div>
@@ -91,6 +101,7 @@
       let lastQuestion = "";
       let lastAnswer = "";
       let lastQaId = "";
+      let currentSessionId = "";
       let historyItems = [];
 
       function esc(s) {
@@ -118,6 +129,71 @@
           historyTab.classList.remove("active");
           askTab.classList.add("active");
         }
+      }
+
+      function getStoredSessionId() {
+        return localStorage.getItem("rag_session_id") || "";
+      }
+
+      function setStoredSessionId(sessionId) {
+        currentSessionId = sessionId || "";
+        localStorage.setItem("rag_session_id", currentSessionId);
+      }
+
+      async function refreshSessions() {
+        const res = await fetch("/sessions");
+        const data = await res.json();
+        const items = data.items || [];
+        const select = document.getElementById("session-select");
+        const previous = currentSessionId || getStoredSessionId();
+
+        select.innerHTML = items.map((s) => {
+          const label = `${s.session_id.slice(0,8)} (${s.message_count})`;
+          return `<option value="${esc(s.session_id)}">${esc(label)}</option>`;
+        }).join("");
+
+        if (items.length === 0) {
+          setStoredSessionId("");
+          document.getElementById("session-status").textContent = "No sessions yet";
+          document.getElementById("session-messages").textContent = "";
+          return;
+        }
+
+        const found = items.find((s) => s.session_id === previous);
+        const selected = found ? previous : items[0].session_id;
+        select.value = selected;
+        setStoredSessionId(selected);
+        document.getElementById("session-status").textContent = `Current: ${selected}`;
+        await loadSessionMessages(selected);
+      }
+
+      async function loadSessionMessages(sessionId) {
+        if (!sessionId) {
+          document.getElementById("session-messages").textContent = "";
+          return;
+        }
+        const res = await fetch(`/sessions/${encodeURIComponent(sessionId)}/messages`);
+        const data = await res.json();
+        const items = data.items || [];
+        const lines = items.map((m, i) =>
+          `${i + 1}. Q: ${m.question}\nA: ${m.answer || ""}\nRating: ${m.rating ?? "-"}\nTrace: ${m.trace_id || "-"}`
+        );
+        document.getElementById("session-messages").textContent = lines.join("\n\n");
+      }
+
+      async function onSessionChange() {
+        const select = document.getElementById("session-select");
+        const id = select.value || "";
+        setStoredSessionId(id);
+        document.getElementById("session-status").textContent = `Current: ${id}`;
+        await loadSessionMessages(id);
+      }
+
+      async function newChat() {
+        const id = crypto.randomUUID().replaceAll("-", "");
+        setStoredSessionId(id);
+        document.getElementById("session-status").textContent = `Current: ${id}`;
+        document.getElementById("session-messages").textContent = "";
       }
 
       function toHistoryRow(it, idx) {
@@ -230,15 +306,21 @@
         const q = document.getElementById("q").value.trim();
         if (!q) return;
         document.getElementById("status").textContent = "Running...";
+        if (!currentSessionId) {
+          await newChat();
+        }
         const res = await fetch("/ask", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({question: q})
+          body: JSON.stringify({question: q, session_id: currentSessionId})
         });
         const data = await res.json();
         lastQuestion = q;
         lastAnswer = data.answer || "";
         lastQaId = data.qa_id || "";
+        if (data.session_id) {
+          setStoredSessionId(data.session_id);
+        }
         document.getElementById("answer").textContent = data.answer || "";
         document.getElementById("eval").textContent = JSON.stringify(data.evaluation || {}, null, 2);
         document.getElementById("similarity").textContent = JSON.stringify(data.similarity || {}, null, 2);
@@ -246,6 +328,7 @@
         document.getElementById("chunks").textContent = JSON.stringify(data.chunks || [], null, 2);
         document.getElementById("trace").textContent = data.trace_id || "";
         document.getElementById("status").textContent = "Done";
+        await refreshSessions();
       }
 
       async function sendFeedback(rating) {
@@ -265,7 +348,10 @@
         });
         const data = await res.json();
         document.getElementById("fb-status").textContent = data.status || "feedback sent";
+        await loadSessionMessages(currentSessionId);
       }
+
+      refreshSessions();
     </script>
   </body>
 </html>

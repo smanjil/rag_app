@@ -4,6 +4,7 @@ import json
 import re
 import uuid
 import base64
+import sqlite3
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -103,6 +104,7 @@ async def lifespan(_: FastAPI):
     global _client, retriever, llm
 
     logger.info("Starting up: initializing clients")
+    init_db()
     initialize_clients()
 
     logger.info("Startup complete")
@@ -125,11 +127,127 @@ UI_HTML_PATH = Path(__file__).parent / "ui" / "index.html"
 qa_history: list[dict] = []
 history_overrides: dict[str, dict] = {}
 RETRIEVAL_K = int(os.getenv("RETRIEVAL_K", "3"))
+DB_PATH = Path(os.getenv("RAG_DB_PATH", str(Path(__file__).parent / "rag_app.db")))
 
 # Langfuse Prompt Management settings
 PROMPT_NAME = os.getenv("LANGFUSE_PROMPT_NAME", "rag-answer")
 PROMPT_LABEL = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
 LOCAL_PROMPT_VERSION = "local-v1.0"
+
+
+def _db_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with _db_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                title TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                qa_id TEXT UNIQUE NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT,
+                context TEXT,
+                evaluation_json TEXT,
+                similarity_json TEXT,
+                rating INTEGER,
+                trace_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at)"
+        )
+
+
+def ensure_session(session_id: str, title: Optional[str] = None) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _db_conn() as conn:
+        row = conn.execute(
+            "SELECT session_id FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO sessions(session_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (session_id, title or "New chat", now, now),
+            )
+        else:
+            conn.execute(
+                "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
+                (now, session_id),
+            )
+
+
+def store_message(
+    *,
+    session_id: str,
+    qa_id: str,
+    question: str,
+    answer: str,
+    context: str,
+    evaluation: dict,
+    similarity: dict,
+    trace_id: Optional[str],
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _db_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO messages(
+                session_id, qa_id, question, answer, context,
+                evaluation_json, similarity_json, trace_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(qa_id) DO UPDATE SET
+                answer=excluded.answer,
+                context=excluded.context,
+                evaluation_json=excluded.evaluation_json,
+                similarity_json=excluded.similarity_json,
+                trace_id=excluded.trace_id,
+                updated_at=excluded.updated_at
+            """,
+            (
+                session_id,
+                qa_id,
+                question,
+                answer,
+                context,
+                json.dumps(evaluation or {}),
+                json.dumps(similarity or {}),
+                trace_id,
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
+            (now, session_id),
+        )
+
+
+def update_message_rating(qa_id: str, rating: int) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _db_conn() as conn:
+        conn.execute(
+            "UPDATE messages SET rating = ?, updated_at = ? WHERE qa_id = ?",
+            (rating, now, qa_id),
+        )
 
 
 def llm_evaluate(question, context, answer):
@@ -174,6 +292,7 @@ Return ONLY JSON:
 
 class QueryRequest(BaseModel):
     question: str
+    session_id: Optional[str] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -328,6 +447,7 @@ def ui():
 
 @app.post("/ask")
 def ask(req: QueryRequest):
+    init_db()
     if retriever is None or llm is None or vectorstore is None:
         try:
             initialize_clients()
@@ -345,6 +465,8 @@ def ask(req: QueryRequest):
     answer = ""
     eval_result = {}
     qa_id = uuid.uuid4().hex
+    session_id = req.session_id or uuid.uuid4().hex
+    ensure_session(session_id, title=req.question[:80])
 
     # ---- Retrieval ----
     docs = []
@@ -436,7 +558,7 @@ def ask(req: QueryRequest):
         with _client.start_as_current_observation(
             name="rag-query",
             as_type="chain",
-            input={"qa_id": qa_id, "question": req.question},
+            input={"session_id": session_id, "qa_id": qa_id, "question": req.question},
         ):
             trace_id = _client.get_current_trace_id()
             logger.info("Langfuse trace started: %s", trace_id)
@@ -455,8 +577,9 @@ def ask(req: QueryRequest):
                     )
                 if hasattr(_client, "set_current_trace_io"):
                     _client.set_current_trace_io(
-                        input={"qa_id": qa_id, "question": req.question},
+                        input={"session_id": session_id, "qa_id": qa_id, "question": req.question},
                         output={
+                            "session_id": session_id,
                             "qa_id": qa_id,
                             "answer": answer,
                             "original_answer": original_answer,
@@ -493,6 +616,7 @@ def ask(req: QueryRequest):
         logger.exception("Langfuse flush failed")
 
     res = {
+        "session_id": session_id,
         "qa_id": qa_id,
         "answer": answer,
         "context": context,
@@ -501,6 +625,16 @@ def ask(req: QueryRequest):
         "evaluation": eval_result,
         "trace_id": trace_id,
     }
+    store_message(
+        session_id=session_id,
+        qa_id=qa_id,
+        question=req.question,
+        answer=answer,
+        context=context,
+        evaluation=eval_result,
+        similarity=similarity,
+        trace_id=trace_id,
+    )
     qa_history.append(
         {
             "qa_id": qa_id,
@@ -518,6 +652,7 @@ def ask(req: QueryRequest):
 
 @app.post("/feedback")
 def feedback(req: FeedbackRequest):
+    init_db()
     if req.rating < 1 or req.rating > 5:
         raise HTTPException(status_code=400, detail="rating must be between 1 and 5")
 
@@ -527,6 +662,7 @@ def feedback(req: FeedbackRequest):
             patch["rating"] = req.rating
             patch["updated_at"] = datetime.now(timezone.utc).isoformat()
             history_overrides[req.qa_id] = patch
+            update_message_rating(req.qa_id, req.rating)
 
         if req.qa_id:
             for item in reversed(qa_history):
@@ -535,6 +671,18 @@ def feedback(req: FeedbackRequest):
                     item["rated_at"] = datetime.now(timezone.utc).isoformat()
                     break
         else:
+            with _db_conn() as conn:
+                row = conn.execute(
+                    """
+                    SELECT qa_id FROM messages
+                    WHERE question = ? AND answer = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (req.question, req.answer),
+                ).fetchone()
+            if row:
+                update_message_rating(row["qa_id"], req.rating)
             for item in reversed(qa_history):
                 if item.get("question") == req.question and item.get("answer") == req.answer:
                     item["rating"] = req.rating
@@ -574,6 +722,7 @@ def history():
 
 @app.post("/history/update")
 def history_update(req: HistoryUpdateRequest):
+    init_db()
     key = req.qa_id or req.trace_id
     if not key:
         raise HTTPException(status_code=400, detail="qa_id or trace_id is required")
@@ -589,6 +738,35 @@ def history_update(req: HistoryUpdateRequest):
         patch["rating"] = req.rating
     patch["updated_at"] = datetime.now(timezone.utc).isoformat()
     history_overrides[key] = patch
+
+    with _db_conn() as conn:
+        if req.qa_id:
+            if req.answer is not None:
+                conn.execute(
+                    "UPDATE messages SET answer = ?, updated_at = ? WHERE qa_id = ?",
+                    (req.answer, patch["updated_at"], req.qa_id),
+                )
+            if req.rating is not None:
+                conn.execute(
+                    "UPDATE messages SET rating = ?, updated_at = ? WHERE qa_id = ?",
+                    (req.rating, patch["updated_at"], req.qa_id),
+                )
+        elif req.trace_id:
+            row = conn.execute(
+                "SELECT qa_id FROM messages WHERE trace_id = ? ORDER BY created_at DESC LIMIT 1",
+                (req.trace_id,),
+            ).fetchone()
+            if row:
+                if req.answer is not None:
+                    conn.execute(
+                        "UPDATE messages SET answer = ?, updated_at = ? WHERE qa_id = ?",
+                        (req.answer, patch["updated_at"], row["qa_id"]),
+                    )
+                if req.rating is not None:
+                    conn.execute(
+                        "UPDATE messages SET rating = ?, updated_at = ? WHERE qa_id = ?",
+                        (req.rating, patch["updated_at"], row["qa_id"]),
+                    )
 
     return {"status": "updated", "key": key, "patch": patch}
 
@@ -640,3 +818,43 @@ def history_langfuse(limit: int = 100):
         reverse=True,
     )
     return {"items": items, "error": err}
+
+
+@app.get("/sessions")
+def sessions():
+    init_db()
+    with _db_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.session_id, s.title, s.created_at, s.updated_at, COUNT(m.id) AS message_count
+            FROM sessions s
+            LEFT JOIN messages m ON m.session_id = s.session_id
+            GROUP BY s.session_id, s.title, s.created_at, s.updated_at
+            ORDER BY s.updated_at DESC
+            """
+        ).fetchall()
+    items = [dict(r) for r in rows]
+    return {"items": items}
+
+
+@app.get("/sessions/{session_id}/messages")
+def session_messages(session_id: str):
+    init_db()
+    with _db_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT qa_id, question, answer, context, evaluation_json, similarity_json,
+                   rating, trace_id, created_at, updated_at
+            FROM messages
+            WHERE session_id = ?
+            ORDER BY created_at ASC
+            """,
+            (session_id,),
+        ).fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["evaluation"] = _as_dict(d.pop("evaluation_json"))
+        d["similarity"] = _as_dict(d.pop("similarity_json"))
+        items.append(d)
+    return {"session_id": session_id, "items": items}
