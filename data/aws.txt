@@ -1,0 +1,5 @@
+AWS ECS is a fully managed container orchestration service. It supports both EC2 and Fargate launch types.
+
+AWS Step Functions enable orchestration of distributed systems using state machines. They are often used with Lambda and Batch workloads.
+
+AWS S3 provides durable object storage with high availability and scalability.

@@ -1,0 +1,5 @@
+Docker containers package applications with dependencies for consistent execution across environments.
+
+A Dockerfile defines the steps to build an image.
+
+Containers are stateless by design, so external storage is required for persistence.

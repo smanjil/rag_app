@@ -1,0 +1,271 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>RAG UI</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 20px; max-width: 1100px; }
+      textarea { width: 100%; min-height: 90px; padding: 8px; }
+      button { padding: 8px 12px; margin-right: 6px; }
+      pre { white-space: pre-wrap; background: #f6f8fa; padding: 10px; border-radius: 8px; }
+      .row { margin-top: 12px; }
+      .label { font-weight: 600; margin: 10px 0 6px; }
+      .muted { color: #666; font-size: 13px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+      th { background: #f3f4f6; }
+      .tabs { margin: 14px 0; }
+      .tab { border: 1px solid #d0d7de; background: #f6f8fa; }
+      .tab.active { background: #dbeafe; border-color: #93c5fd; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <h3>RAG App</h3>
+    <div class="muted">Ask questions, rate answers, and view Langfuse-backed history.</div>
+
+    <div class="tabs">
+      <button id="tab-ask" class="tab active" onclick="showTab('ask')">Ask</button>
+      <button id="tab-history" class="tab" onclick="showTab('history')">History</button>
+    </div>
+
+    <section id="ask-section">
+      <div class="row">
+        <textarea id="q" placeholder="Type your question..."></textarea>
+      </div>
+      <div class="row">
+        <button onclick="ask()">Ask</button>
+        <span id="status" class="muted"></span>
+      </div>
+      <div class="row">
+        <div class="label">Answer</div>
+        <pre id="answer"></pre>
+        <div class="label">Evaluation</div>
+        <pre id="eval"></pre>
+        <div class="label">Similarity</div>
+        <pre id="similarity"></pre>
+        <div class="label">Context</div>
+        <pre id="context"></pre>
+        <div class="label">Chunks</div>
+        <pre id="chunks"></pre>
+        <div class="label">Trace ID</div>
+        <pre id="trace"></pre>
+      </div>
+      <div class="row">
+        <div class="label">Feedback</div>
+        <button onclick="sendFeedback(1)">1</button>
+        <button onclick="sendFeedback(2)">2</button>
+        <button onclick="sendFeedback(3)">3</button>
+        <button onclick="sendFeedback(4)">4</button>
+        <button onclick="sendFeedback(5)">5</button>
+        <span id="fb-status" class="muted"></span>
+      </div>
+    </section>
+
+    <section id="history-section" class="hidden">
+      <div class="row">
+        <button onclick="refreshLangfuseHistory()">Refresh</button>
+        <span id="history-status" class="muted"></span>
+      </div>
+      <div class="row">
+        <div class="label">All Q/A Records From Langfuse</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Asked At (UTC)</th>
+              <th>Question</th>
+              <th>Answer</th>
+              <th>Rating</th>
+              <th>Eval</th>
+              <th>Similarity</th>
+              <th>Trace ID</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="langfuse-history-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <script>
+      let lastQuestion = "";
+      let lastAnswer = "";
+      let lastQaId = "";
+      let historyItems = [];
+
+      function esc(s) {
+        return String(s ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      }
+
+      function showTab(tab) {
+        const askSection = document.getElementById("ask-section");
+        const historySection = document.getElementById("history-section");
+        const askTab = document.getElementById("tab-ask");
+        const historyTab = document.getElementById("tab-history");
+
+        if (tab === "history") {
+          askSection.classList.add("hidden");
+          historySection.classList.remove("hidden");
+          askTab.classList.remove("active");
+          historyTab.classList.add("active");
+          refreshLangfuseHistory();
+        } else {
+          historySection.classList.add("hidden");
+          askSection.classList.remove("hidden");
+          historyTab.classList.remove("active");
+          askTab.classList.add("active");
+        }
+      }
+
+      function toHistoryRow(it, idx) {
+        const question = it.question || "";
+        const answer = it.answer || "";
+        const rating = it.rating == null ? "-" : String(it.rating);
+        const evalObj = it.evaluation || {};
+        const simObj = it.similarity || {};
+        const askedAt = it.asked_at || "";
+        const traceId = it.trace_id || "";
+        const evalText = `f=${evalObj.faithfulness ?? "-"} r=${evalObj.relevance ?? "-"} v=${evalObj.verdict ?? "-"}`;
+        const simText = `best=${simObj.best_score ?? "-"} avg=${simObj.avg_score ?? "-"} k=${simObj.k ?? "-"}`;
+
+        return `
+          <tr>
+            <td>${esc(askedAt)}</td>
+            <td>${esc(question)}</td>
+            <td>${esc(answer)}</td>
+            <td>${esc(rating)}</td>
+            <td>${esc(evalText)}</td>
+            <td>${esc(simText)}</td>
+            <td>${esc(traceId)}</td>
+            <td>
+              <button onclick="editRow(${idx})">Edit</button>
+              <button onclick="setRating(${idx},1)">1</button>
+              <button onclick="setRating(${idx},2)">2</button>
+              <button onclick="setRating(${idx},3)">3</button>
+              <button onclick="setRating(${idx},4)">4</button>
+              <button onclick="setRating(${idx},5)">5</button>
+            </td>
+          </tr>
+        `;
+      }
+
+      async function editRow(idx) {
+        const item = historyItems[idx] || {};
+        const qaId = item.qa_id || "";
+        const traceId = item.trace_id || "";
+        const answer = item.answer || "";
+        const rating = item.rating == null ? "" : String(item.rating);
+        const newAnswer = prompt("Update answer", answer || "");
+        if (newAnswer == null) return;
+        const ratingIn = prompt("Update rating (1-5, blank to keep)", rating || "");
+        if (ratingIn == null) return;
+        const body = {
+          qa_id: qaId || null,
+          trace_id: traceId || null,
+          answer: newAnswer
+        };
+        if (ratingIn.trim() !== "") body.rating = Number(ratingIn.trim());
+
+        const res = await fetch("/history/update", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        const status = document.getElementById("history-status");
+        if (res.ok) {
+          status.textContent = "Record updated";
+          await refreshLangfuseHistory();
+        } else {
+          status.textContent = `Update failed: ${data.detail || "unknown error"}`;
+        }
+      }
+
+      async function setRating(idx, rating) {
+        const item = historyItems[idx] || {};
+        const body = {
+          qa_id: item.qa_id || null,
+          trace_id: item.trace_id || null,
+          rating: rating
+        };
+        const res = await fetch("/history/update", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        const status = document.getElementById("history-status");
+        if (res.ok) {
+          status.textContent = `Rating updated to ${rating}`;
+          await refreshLangfuseHistory();
+        } else {
+          status.textContent = `Rating update failed: ${data.detail || "unknown error"}`;
+        }
+      }
+
+      async function refreshLangfuseHistory() {
+        const status = document.getElementById("history-status");
+        status.textContent = "Loading...";
+        try {
+          const res = await fetch("/history/langfuse?limit=100");
+          const data = await res.json();
+          const items = data.items || [];
+          historyItems = items;
+          const tbody = document.getElementById("langfuse-history-body");
+          tbody.innerHTML = items.map((it, idx) => toHistoryRow(it, idx)).join("");
+          if (data.error) {
+            status.textContent = `Loaded ${items.length} records (warning: ${data.error})`;
+          } else {
+            status.textContent = `Loaded ${items.length} records`;
+          }
+        } catch (e) {
+          status.textContent = `Failed to load history: ${e}`;
+        }
+      }
+
+      async function ask() {
+        const q = document.getElementById("q").value.trim();
+        if (!q) return;
+        document.getElementById("status").textContent = "Running...";
+        const res = await fetch("/ask", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({question: q})
+        });
+        const data = await res.json();
+        lastQuestion = q;
+        lastAnswer = data.answer || "";
+        lastQaId = data.qa_id || "";
+        document.getElementById("answer").textContent = data.answer || "";
+        document.getElementById("eval").textContent = JSON.stringify(data.evaluation || {}, null, 2);
+        document.getElementById("similarity").textContent = JSON.stringify(data.similarity || {}, null, 2);
+        document.getElementById("context").textContent = data.context || "";
+        document.getElementById("chunks").textContent = JSON.stringify(data.chunks || [], null, 2);
+        document.getElementById("trace").textContent = data.trace_id || "";
+        document.getElementById("status").textContent = "Done";
+      }
+
+      async function sendFeedback(rating) {
+        if (!lastQuestion || !lastAnswer) {
+          document.getElementById("fb-status").textContent = "Ask a question first.";
+          return;
+        }
+        const res = await fetch("/feedback", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            qa_id: lastQaId,
+            question: lastQuestion,
+            answer: lastAnswer,
+            rating: rating
+          })
+        });
+        const data = await res.json();
+        document.getElementById("fb-status").textContent = data.status || "feedback sent";
+      }
+    </script>
+  </body>
+</html>

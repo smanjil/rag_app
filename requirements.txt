@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+langchain
+langchain-community
+langchain-mistralai
+langchain-text-splitters
+sentence-transformers
+python-dotenv
+pydantic
+langchain-huggingface==1.2.1
+langchain-pinecone
+pinecone
+langfuse

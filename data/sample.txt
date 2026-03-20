@@ -1,0 +1,3 @@
+DHL is a global logistics company providing courier, package delivery, and supply chain management services.
+
+Retrieval-Augmented Generation (RAG) combines information retrieval with language generation to produce answers grounded in external data sources.
