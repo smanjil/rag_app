@@ -597,48 +597,37 @@ def history_update(req: HistoryUpdateRequest):
 def history_langfuse(limit: int = 100):
     traces, err = fetch_langfuse_traces(limit=limit)
 
-    # Merge rag-query traces with user-feedback traces by qa_id.
+    # Create rows from rag-query only.
     by_key = {}
     for t in traces:
-        name = t.get("name")
-        if name not in {"rag-query", "user-feedback"}:
+        if t.get("name") != "rag-query":
             continue
         input_obj = _as_dict(t.get("input"))
         output_obj = _as_dict(t.get("output"))
         qa_id = input_obj.get("qa_id") or output_obj.get("qa_id")
-        fallback_key = f"{input_obj.get('question','')}|{input_obj.get('answer','')}"
-        key = qa_id or fallback_key
-        if not key:
+        key = qa_id or f"trace:{t.get('id')}"
+        by_key[key] = {
+            "qa_id": qa_id,
+            "asked_at": t.get("timestamp") or t.get("createdAt"),
+            "question": input_obj.get("question"),
+            "answer": output_obj.get("answer"),
+            "rating": None,
+            "evaluation": output_obj.get("evaluation"),
+            "similarity": output_obj.get("similarity"),
+            "trace_id": t.get("id"),
+        }
+
+    # Attach feedback ratings to existing rag-query rows by qa_id only.
+    for t in traces:
+        if t.get("name") != "user-feedback":
             continue
-
-        item = by_key.get(
-            key,
-            {
-                "qa_id": qa_id,
-                "asked_at": t.get("timestamp") or t.get("createdAt"),
-                "question": input_obj.get("question"),
-                "answer": None,
-                "rating": None,
-                "evaluation": None,
-                "similarity": None,
-                "trace_id": t.get("id"),
-            },
-        )
-
-        if name == "rag-query":
-            item["asked_at"] = (
-                item.get("asked_at") or t.get("timestamp") or t.get("createdAt")
-            )
-            item["question"] = input_obj.get("question") or item.get("question")
-            item["answer"] = output_obj.get("answer") or item.get("answer")
-            item["evaluation"] = output_obj.get("evaluation") or item.get("evaluation")
-            item["similarity"] = output_obj.get("similarity") or item.get("similarity")
-            item["trace_id"] = t.get("id") or item.get("trace_id")
-
-        if name == "user-feedback":
-            item["rating"] = output_obj.get("rating", item.get("rating"))
-
-        by_key[key] = item
+        input_obj = _as_dict(t.get("input"))
+        output_obj = _as_dict(t.get("output"))
+        qa_id = input_obj.get("qa_id")
+        if not qa_id:
+            continue
+        if qa_id in by_key:
+            by_key[qa_id]["rating"] = output_obj.get("rating", by_key[qa_id]["rating"])
 
     for item_key, item in by_key.items():
         override_key = item.get("qa_id") or item.get("trace_id") or item_key
