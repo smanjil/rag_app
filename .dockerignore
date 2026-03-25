@@ -1,5 +1,9 @@
 __pycache__/
 *.pyc
 .env
-vectorstore/
 .git/
+.venv/
+.pytest_cache/
+storage/
+rag_app.db
+tests/

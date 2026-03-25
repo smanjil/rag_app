@@ -1,32 +1,54 @@
 # RAG App
 
-Lightweight FastAPI RAG app with:
+Production-style FastAPI RAG service with:
 - Pinecone retrieval
 - Mistral generation
 - Langfuse tracing + prompt management
-- SQLite-backed chat sessions/messages
-- Built-in web UI (`/`)
+- SQLite-backed sessions/messages
+- Built-in UI (`/`)
+- Checked-in OpenAPI spec (`openapi/openapi.json`)
+- Pytest suite for API + logic paths
+- Docker + docker-compose runtime
 
-## Project Structure
+## Architecture (Restructured)
 
-- `app.py`: FastAPI app, RAG pipeline, tracing, feedback, history endpoints
-- `ingest.py`: loads `data/*.txt`, chunks, embeds, uploads to Pinecone
-- `ui/index.html`: frontend UI
-- `data/`: source text files for indexing
-- `.env`: local config and API keys
-- `rag_app.db`: local SQLite database (auto-created)
+- `app.py`: compatibility entrypoint (`uvicorn app:app`)
+- `rag_service/main.py`: app lifecycle + routes
+- `rag_service/config.py`: env and runtime configuration
+- `rag_service/models.py`: request schemas
+- `rag_service/database.py`: SQLite persistence helpers
+- `rag_service/logic.py`: prompt/evaluation/rejection/langfuse helpers
+- `scripts/export_openapi.py`: exports OpenAPI artifact
+- `openapi/openapi.json`: generated API contract
+- `tests/`: pytest suite
+
+## What Changed
+
+Recent upgrade includes:
+- Refactor from single-file app to layered package modules.
+- Lazy heavy imports (`langchain`, `pinecone`, `langfuse`) for better testability and OpenAPI export reliability.
+- Startup hardening: dependency init failures log and retry lazily in request path.
+- OpenAPI spec export and checked-in API contract file.
+- Container runtime improvements (non-root user, healthcheck, compose file, persistent SQLite volume).
+- Comprehensive pytest coverage for route behavior and evaluation gating logic.
 
 ## Requirements
 
-- Python 3.11 recommended
-- Pinecone account + API key
+- Python 3.11+
+- Pinecone API key + index
 - Mistral API key
-- Langfuse project keys (optional but used by this app)
+- Langfuse keys (recommended; `/history/langfuse` requires them)
 
-Install dependencies:
+Install runtime deps:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Install test deps:
+
+```bash
+pip install -r requirements-dev.txt
 ```
 
 ## Environment Variables
@@ -45,6 +67,7 @@ LANGFUSE_PUBLIC_KEY=...
 LANGFUSE_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_PROMPT_NAME=rag-answer
 LANGFUSE_PROMPT_LABEL=production
+LANGFUSE_ENVIRONMENT=default
 
 EVAL_FAITHFULNESS_THRESHOLD=0.7
 EVAL_RELEVANCE_THRESHOLD=0.7
@@ -52,86 +75,152 @@ RETRIEVAL_K=3
 RAG_DB_PATH=./rag_app.db
 ```
 
-## 1) Ingest Data into Pinecone
+## Run Locally
 
-Put `.txt` files under `data/`, then run:
+1. Create env + install:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. Ingest `data/*.txt` into Pinecone:
 
 ```bash
 python ingest.py
 ```
 
-## 2) Run the App
+3. Run app:
 
 ```bash
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open:
+4. Open:
 - UI: `http://localhost:8000/`
 - Docs: `http://localhost:8000/docs`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
 
-## Prompt Management (Langfuse)
+## OpenAPI Specification File
 
-Create a text prompt in Langfuse Prompt Management:
-- Name: `rag-answer` (or value of `LANGFUSE_PROMPT_NAME`)
-- Label: `production` (or value of `LANGFUSE_PROMPT_LABEL`)
-- Template:
+Export checked-in spec:
 
-```txt
-Answer ONLY using the context below. If unsure, say you don't know.
-
-Context:
-{{context}}
-
-Question:
-{{question}}
+```bash
+python scripts/export_openapi.py
 ```
 
-The app fetches this prompt dynamically and falls back to local template if unavailable.
+Artifact path:
+- `openapi/openapi.json`
 
-## API Endpoints
+This file is OpenAPI-compatible and can be used by gateways, SDK generators, or API tooling.
 
-- `POST /ask`
-  - Input: `{ "question": "...", "session_id": "optional" }`
-  - Returns: answer, context, chunks (with `similarity_score`), evaluation, similarity summary, trace_id
+## Container Run
 
-- `POST /feedback`
-  - Input: `{ "qa_id": "...", "question": "...", "answer": "...", "rating": 1..5 }`
+## Docker
 
+```bash
+docker build -t rag-app:latest .
+docker run --rm -p 8000:8000 --env-file .env -e RAG_DB_PATH=/app/storage/rag_app.db -v "$(pwd)/storage:/app/storage" rag-app:latest
+```
+
+## Docker Compose
+
+```bash
+mkdir -p storage
+docker compose up --build
+```
+
+App available at `http://localhost:8000`.
+
+## API Routes
+
+- `GET /` UI page
+- `POST /ask` ask question, retrieve context, generate answer, evaluate, persist
+- `POST /feedback` submit rating by `qa_id` or by `question`+`answer`
+- `GET /history` in-memory history for running process
+- `POST /history/update` override answer/rating by `qa_id` or `trace_id`
+- `GET /history/langfuse` merged Langfuse traces and feedback
+- `GET /sessions` list SQLite sessions
+- `GET /sessions/{session_id}/messages` list SQLite messages
+
+## Testing
+
+Run full suite:
+
+```bash
+pytest
+```
+
+Current test coverage includes:
+- `/ask` happy path and persistence
+- `/ask` rejection path for low evaluation scores
+- `/ask` evaluator-failure fallback path
+- `/feedback` success and validation failures
+- `/history/update` validation failures
+- `/history/langfuse` merge + override behavior
+- logic tests for `should_reject` edge cases
+
+Notes:
+- Tests mock vectorstore/LLM and avoid Pinecone/Mistral network calls.
+- Tests use temporary SQLite DB paths.
+
+## Where Results Are Stored
+
+## SQLite (local durable store)
+
+Default file:
+- `rag_app.db` (or `RAG_DB_PATH` override)
+
+Tables:
+- `sessions`
+- `messages`
+
+Inspect manually:
+
+```bash
+sqlite3 rag_app.db
+.tables
+SELECT session_id, title, updated_at FROM sessions ORDER BY updated_at DESC;
+SELECT qa_id, session_id, question, rating, trace_id, created_at FROM messages ORDER BY created_at DESC LIMIT 20;
+```
+
+## Langfuse (remote)
+
+Traces/observations include:
+- `rag-query`
+- `prompt`
+- `generation`
+- `decision`
+- `user-feedback`
+
+View in Langfuse UI or via:
 - `GET /history/langfuse?limit=100`
-  - Returns Langfuse-derived history rows (rag-query + feedback merge)
 
-- `POST /history/update`
-  - Input: `{ "qa_id"|"trace_id", "answer"?, "rating"? }`
-  - Applies local overrides for UI history edits
+## API/UI Response Surface
 
-- `GET /sessions`
-  - List chat sessions from SQLite
-
-- `GET /sessions/{session_id}/messages`
-  - List messages for a session from SQLite
-
-## UI Notes
-
-- Ask tab: question, answer, eval, context, chunks, similarity
-- Ask tab: includes `New Chat`, session switcher, and per-session transcript
-- History tab: records from Langfuse, rating controls, edit action
+Immediate `/ask` response includes:
+- `answer`
+- `context`
+- `chunks` (with `similarity_score`)
+- `similarity` summary
+- `evaluation`
+- `session_id`, `qa_id`, `trace_id`
 
 ## Troubleshooting
 
-- `503 Service starting up`: check `.env` keys and network access
-- `history/langfuse` warning/error:
-  - verify Langfuse keys/URL
-  - `limit` must be <= 100
-- Missing traces in Langfuse:
-  - confirm correct project keys
-  - check `LANGFUSE_BASE_URL`
-  - ensure requests hit `/ask` and app can flush events
+- `503 Service starting up`:
+  - verify `.env` keys
+  - verify external service/network access
 
-## Quick Test
+- `/history/langfuse` errors:
+  - verify Langfuse keys and base URL
+  - ensure `limit <= 100`
 
-```bash
-curl -sS -X POST http://localhost:8000/ask \
-  -H "Content-Type: application/json" \
-  -d '{"question":"what is s3"}' | jq
-```
+- Feedback `400` errors:
+  - rating must be `1..5`
+  - when `qa_id` omitted, both `question` and `answer` are required
+
+- Container build large/slow:
+  - ensure `.dockerignore` is respected
+  - avoid copying local `.venv` and DB artifacts
