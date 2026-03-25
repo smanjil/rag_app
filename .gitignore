@@ -1,2 +1,6 @@
 .env
-__pycache__
+.venv/
+__pycache__/
+.pytest_cache/
+rag_app.db
+storage/
