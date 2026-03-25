@@ -4,286 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>RAG App</title>
-    <style>
-      :root {
-        --bg: #f3f7f4;
-        --panel: #ffffff;
-        --panel-alt: #f7faf8;
-        --text: #16211b;
-        --muted: #5a6a60;
-        --line: #d4e1d8;
-        --brand: #0f766e;
-        --brand-soft: #ccfbf1;
-        --danger: #b91c1c;
-        --shadow: 0 8px 24px rgba(11, 24, 17, 0.08);
-      }
-
-      * { box-sizing: border-box; }
-
-      body {
-        margin: 0;
-        background:
-          radial-gradient(circle at 8% 8%, #d1fae5 0, rgba(209, 250, 229, 0.15) 40%, transparent 65%),
-          radial-gradient(circle at 92% 0%, #ccfbf1 0, rgba(204, 251, 241, 0.18) 45%, transparent 65%),
-          var(--bg);
-        color: var(--text);
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
-      }
-
-      .app-shell {
-        max-width: 1200px;
-        margin: 20px auto;
-        padding: 0 16px 24px;
-      }
-
-      .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 16px;
-        margin-bottom: 14px;
-      }
-
-      .title-wrap h1 {
-        font-size: 1.45rem;
-        margin: 0;
-        letter-spacing: 0.02em;
-      }
-
-      .sub {
-        margin-top: 4px;
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-
-      .status-chip {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 8px 12px;
-        box-shadow: var(--shadow);
-        font-size: 0.85rem;
-        color: var(--muted);
-      }
-
-      .tabs {
-        display: inline-flex;
-        gap: 8px;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 6px;
-        box-shadow: var(--shadow);
-        margin-bottom: 16px;
-      }
-
-      .tab {
-        border: 0;
-        border-radius: 999px;
-        padding: 8px 14px;
-        background: transparent;
-        color: var(--muted);
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-
-      .tab.active {
-        background: var(--brand);
-        color: #fff;
-      }
-
-      .hidden { display: none; }
-
-      .grid {
-        display: grid;
-        grid-template-columns: 320px 1fr;
-        gap: 14px;
-      }
-
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        box-shadow: var(--shadow);
-        overflow: hidden;
-      }
-
-      .card-header {
-        padding: 12px 14px;
-        border-bottom: 1px solid var(--line);
-        background: var(--panel-alt);
-        font-weight: 650;
-      }
-
-      .card-body {
-        padding: 14px;
-      }
-
-      .stack { display: grid; gap: 12px; }
-
-      .label {
-        font-size: 0.82rem;
-        font-weight: 650;
-        color: var(--muted);
-        margin-bottom: 6px;
-      }
-
-      textarea,
-      select,
-      input {
-        width: 100%;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 10px 12px;
-        background: #fff;
-        color: var(--text);
-        font: inherit;
-      }
-
-      textarea {
-        min-height: 120px;
-        resize: vertical;
-      }
-
-      .btn-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      button {
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        background: #fff;
-        color: var(--text);
-        padding: 8px 12px;
-        cursor: pointer;
-        transition: transform 0.1s ease, background 0.2s ease;
-      }
-
-      button:hover { background: #f2f7f4; }
-      button:active { transform: translateY(1px); }
-
-      .btn-primary {
-        background: var(--brand);
-        border-color: var(--brand);
-        color: #fff;
-      }
-
-      .btn-primary:hover { background: #0d665f; }
-
-      .session-item {
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 10px;
-        background: #fff;
-      }
-
-      .session-q {
-        font-weight: 650;
-        margin-bottom: 4px;
-      }
-
-      .session-meta {
-        font-size: 0.8rem;
-        color: var(--muted);
-      }
-
-      .rating-row {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-
-      .rating-btn {
-        min-width: 36px;
-        text-align: center;
-      }
-
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 4px 10px;
-        font-size: 0.78rem;
-        color: var(--muted);
-        background: #fff;
-      }
-
-      .result-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .result-panel {
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        overflow: hidden;
-      }
-
-      .result-title {
-        padding: 8px 10px;
-        background: var(--panel-alt);
-        border-bottom: 1px solid var(--line);
-        font-size: 0.84rem;
-        font-weight: 650;
-        color: var(--muted);
-      }
-
-      pre {
-        margin: 0;
-        max-height: 240px;
-        overflow: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-        background: #fff;
-        padding: 10px;
-        font-size: 0.84rem;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-
-      th, td {
-        border: 1px solid var(--line);
-        padding: 8px;
-        text-align: left;
-        vertical-align: top;
-        font-size: 0.83rem;
-      }
-
-      th {
-        background: var(--panel-alt);
-        color: var(--muted);
-      }
-
-      .history-answer {
-        max-width: 300px;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-
-      .muted { color: var(--muted); }
-      .danger { color: var(--danger); }
-
-      @media (max-width: 980px) {
-        .grid { grid-template-columns: 1fr; }
-        .result-grid { grid-template-columns: 1fr; }
-      }
-
-      @keyframes pulse {
-        0% { opacity: 0.6; }
-        50% { opacity: 1; }
-        100% { opacity: 0.6; }
-      }
-
-      .loading { animation: pulse 1s ease-in-out infinite; }
-    </style>
+    <link rel="stylesheet" href="/ui/styles.css" />
   </head>
   <body>
     <div class="app-shell">
@@ -390,341 +111,72 @@
       </section>
 
       <section id="history-section" class="hidden">
-        <div class="card">
-          <div class="card-header">Langfuse History</div>
-          <div class="card-body stack">
+        <div class="history-layout">
+          <div class="card">
+            <div class="card-header">Sessions</div>
+            <div class="card-body stack">
+              <input
+                id="history-session-search"
+                type="text"
+                placeholder="Search session id..."
+                oninput="onHistorySessionSearch()"
+              />
+              <div class="btn-row">
+                <button onclick="clearHistorySessionFilter()">All Sessions</button>
+                <span id="history-selected-session" class="pill">Selected: all</span>
+              </div>
+              <div id="history-session-list" class="history-session-list"></div>
+              <div class="btn-row">
+                <button id="history-session-prev" onclick="changeHistorySessionPage(-1)">Prev</button>
+                <span id="history-session-page" class="pill">Page 1/1</span>
+                <button id="history-session-next" onclick="changeHistorySessionPage(1)">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">Langfuse Traces</div>
+            <div class="card-body stack">
             <div class="btn-row">
-              <button onclick="refreshLangfuseHistory()">Refresh</button>
+              <button onclick="refreshHistoryPane()">Refresh</button>
               <span id="history-status" class="pill">Idle</span>
             </div>
-            <div style="overflow:auto;">
+            <input
+              id="history-trace-search"
+              type="text"
+              placeholder="Search traces by trace id, question, model, similarity..."
+              oninput="onHistoryTraceSearch()"
+            />
+            <div class="muted" id="history-trace-caption">Showing all traces</div>
+            <div class="history-table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Asked At (UTC)</th>
-                    <th>Question</th>
-                    <th>Answer</th>
+                      <th>Asked At (UTC)</th>
+                      <th>Question</th>
+                      <th>Answer</th>
                     <th>Rating</th>
                     <th>Eval</th>
                     <th>Similarity</th>
+                    <th>Models</th>
                     <th>Trace</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
-                <tbody id="langfuse-history-body"></tbody>
-              </table>
+                  <tbody id="langfuse-history-body"></tbody>
+                </table>
+              </div>
+              <div class="btn-row">
+                <button id="history-trace-prev" onclick="changeHistoryTracePage(-1)">Prev</button>
+                <span id="history-trace-page" class="pill">Page 1/1</span>
+                <button id="history-trace-next" onclick="changeHistoryTracePage(1)">Next</button>
+              </div>
             </div>
           </div>
         </div>
       </section>
     </div>
 
-    <script>
-      let lastQuestion = "";
-      let lastAnswer = "";
-      let lastQaId = "";
-      let currentSessionId = "";
-      let historyItems = [];
-
-      function esc(s) {
-        return String(s ?? "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;");
-      }
-
-      function setGlobalStatus(text, isError = false) {
-        const el = document.getElementById("global-status");
-        el.textContent = text;
-        el.classList.toggle("danger", isError);
-      }
-
-      function showTab(tab) {
-        const askSection = document.getElementById("ask-section");
-        const historySection = document.getElementById("history-section");
-        const askTab = document.getElementById("tab-ask");
-        const historyTab = document.getElementById("tab-history");
-
-        if (tab === "history") {
-          askSection.classList.add("hidden");
-          historySection.classList.remove("hidden");
-          askTab.classList.remove("active");
-          historyTab.classList.add("active");
-          refreshLangfuseHistory();
-        } else {
-          historySection.classList.add("hidden");
-          askSection.classList.remove("hidden");
-          historyTab.classList.remove("active");
-          askTab.classList.add("active");
-        }
-      }
-
-      function getStoredSessionId() {
-        return localStorage.getItem("rag_session_id") || "";
-      }
-
-      function setStoredSessionId(sessionId) {
-        currentSessionId = sessionId || "";
-        localStorage.setItem("rag_session_id", currentSessionId);
-      }
-
-      function clearAskForm() {
-        document.getElementById("q").value = "";
-      }
-
-      function renderSessionMessages(items) {
-        const container = document.getElementById("session-messages");
-        if (!items.length) {
-          container.innerHTML = `<div class="muted">No messages in this session yet.</div>`;
-          return;
-        }
-        container.innerHTML = items.map((m, i) => `
-          <div class="session-item">
-            <div class="session-q">${i + 1}. ${esc(m.question || "")}</div>
-            <div>${esc(m.answer || "")}</div>
-            <div class="session-meta">rating=${esc(m.rating ?? "-")} | trace=${esc(m.trace_id || "-")}</div>
-          </div>
-        `).join("");
-      }
-
-      async function refreshSessions() {
-        try {
-          const res = await fetch("/sessions");
-          const data = await res.json();
-          const items = data.items || [];
-          const select = document.getElementById("session-select");
-          const previous = currentSessionId || getStoredSessionId();
-
-          select.innerHTML = items.map((s) => {
-            const label = `${s.session_id.slice(0, 8)} (${s.message_count})`;
-            return `<option value="${esc(s.session_id)}">${esc(label)}</option>`;
-          }).join("");
-
-          if (!items.length) {
-            setStoredSessionId("");
-            document.getElementById("session-status").textContent = "No sessions yet";
-            renderSessionMessages([]);
-            return;
-          }
-
-          const found = items.find((s) => s.session_id === previous);
-          const selected = found ? previous : items[0].session_id;
-          select.value = selected;
-          setStoredSessionId(selected);
-          document.getElementById("session-status").textContent = `Current: ${selected}`;
-          await loadSessionMessages(selected);
-        } catch (e) {
-          setGlobalStatus(`Session load failed: ${e}`, true);
-        }
-      }
-
-      async function loadSessionMessages(sessionId) {
-        if (!sessionId) {
-          renderSessionMessages([]);
-          return;
-        }
-        const res = await fetch(`/sessions/${encodeURIComponent(sessionId)}/messages`);
-        const data = await res.json();
-        renderSessionMessages(data.items || []);
-      }
-
-      async function onSessionChange() {
-        const select = document.getElementById("session-select");
-        const id = select.value || "";
-        setStoredSessionId(id);
-        document.getElementById("session-status").textContent = `Current: ${id}`;
-        await loadSessionMessages(id);
-      }
-
-      async function newChat() {
-        const id = crypto.randomUUID().replaceAll("-", "");
-        setStoredSessionId(id);
-        document.getElementById("session-status").textContent = `Current: ${id}`;
-        renderSessionMessages([]);
-      }
-
-      function toHistoryRow(it, idx) {
-        const question = it.question || "";
-        const answer = it.answer || "";
-        const rating = it.rating == null ? "-" : String(it.rating);
-        const evalObj = it.evaluation || {};
-        const simObj = it.similarity || {};
-        const askedAt = it.asked_at || "";
-        const traceId = it.trace_id || "";
-        const evalText = `f=${evalObj.faithfulness ?? "-"} r=${evalObj.relevance ?? "-"} v=${evalObj.verdict ?? "-"}`;
-        const simText = `best=${simObj.best_score ?? "-"} avg=${simObj.avg_score ?? "-"} k=${simObj.k ?? "-"}`;
-
-        return `
-          <tr>
-            <td>${esc(askedAt)}</td>
-            <td>${esc(question)}</td>
-            <td class="history-answer">${esc(answer)}</td>
-            <td>${esc(rating)}</td>
-            <td>${esc(evalText)}</td>
-            <td>${esc(simText)}</td>
-            <td>${esc(traceId)}</td>
-            <td>
-              <div class="btn-row">
-                <button onclick="editRow(${idx})">Edit</button>
-                <button onclick="setRating(${idx},1)">1</button>
-                <button onclick="setRating(${idx},2)">2</button>
-                <button onclick="setRating(${idx},3)">3</button>
-                <button onclick="setRating(${idx},4)">4</button>
-                <button onclick="setRating(${idx},5)">5</button>
-              </div>
-            </td>
-          </tr>
-        `;
-      }
-
-      async function editRow(idx) {
-        const item = historyItems[idx] || {};
-        const qaId = item.qa_id || "";
-        const traceId = item.trace_id || "";
-        const answer = item.answer || "";
-        const rating = item.rating == null ? "" : String(item.rating);
-        const newAnswer = prompt("Update answer", answer || "");
-        if (newAnswer == null) return;
-        const ratingIn = prompt("Update rating (1-5, blank to keep)", rating || "");
-        if (ratingIn == null) return;
-
-        const body = { qa_id: qaId || null, trace_id: traceId || null, answer: newAnswer };
-        if (ratingIn.trim() !== "") body.rating = Number(ratingIn.trim());
-
-        const res = await fetch("/history/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
-        const status = document.getElementById("history-status");
-        if (res.ok) {
-          status.textContent = "Record updated";
-          await refreshLangfuseHistory();
-        } else {
-          status.textContent = `Update failed: ${data.detail || "unknown error"}`;
-        }
-      }
-
-      async function setRating(idx, rating) {
-        const item = historyItems[idx] || {};
-        const body = { qa_id: item.qa_id || null, trace_id: item.trace_id || null, rating };
-        const res = await fetch("/history/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
-        const status = document.getElementById("history-status");
-        if (res.ok) {
-          status.textContent = `Rating updated to ${rating}`;
-          await refreshLangfuseHistory();
-        } else {
-          status.textContent = `Rating update failed: ${data.detail || "unknown error"}`;
-        }
-      }
-
-      async function refreshLangfuseHistory() {
-        const status = document.getElementById("history-status");
-        status.textContent = "Loading...";
-        status.classList.add("loading");
-        try {
-          const res = await fetch("/history/langfuse?limit=100");
-          const data = await res.json();
-          historyItems = data.items || [];
-          document.getElementById("langfuse-history-body").innerHTML = historyItems
-            .map((it, idx) => toHistoryRow(it, idx))
-            .join("");
-
-          if (data.error) {
-            status.textContent = `Loaded ${historyItems.length} rows (warning: ${data.error})`;
-          } else {
-            status.textContent = `Loaded ${historyItems.length} rows`;
-          }
-        } catch (e) {
-          status.textContent = `Failed: ${e}`;
-        } finally {
-          status.classList.remove("loading");
-        }
-      }
-
-      async function ask() {
-        const q = document.getElementById("q").value.trim();
-        if (!q) return;
-
-        const askStatus = document.getElementById("status");
-        askStatus.textContent = "Running...";
-        askStatus.classList.add("loading");
-
-        if (!currentSessionId) {
-          await newChat();
-        }
-
-        try {
-          const res = await fetch("/ask", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: q, session_id: currentSessionId })
-          });
-          const data = await res.json();
-
-          if (!res.ok) {
-            throw new Error(data.detail || "request failed");
-          }
-
-          lastQuestion = q;
-          lastAnswer = data.answer || "";
-          lastQaId = data.qa_id || "";
-          if (data.session_id) setStoredSessionId(data.session_id);
-
-          document.getElementById("qa-pill").textContent = `qa_id: ${lastQaId || "-"}`;
-          document.getElementById("trace-pill").textContent = `trace_id: ${data.trace_id || "-"}`;
-          document.getElementById("answer").textContent = data.answer || "";
-          document.getElementById("eval").textContent = JSON.stringify(data.evaluation || {}, null, 2);
-          document.getElementById("similarity").textContent = JSON.stringify(data.similarity || {}, null, 2);
-          document.getElementById("context").textContent = data.context || "";
-          document.getElementById("chunks").textContent = JSON.stringify(data.chunks || [], null, 2);
-
-          askStatus.textContent = "Done";
-          setGlobalStatus("Request completed");
-          await refreshSessions();
-        } catch (e) {
-          askStatus.textContent = "Failed";
-          setGlobalStatus(`Ask failed: ${e}`, true);
-        } finally {
-          askStatus.classList.remove("loading");
-        }
-      }
-
-      async function sendFeedback(rating) {
-        if (!lastQuestion || !lastAnswer) {
-          document.getElementById("fb-status").textContent = "Ask a question first.";
-          return;
-        }
-
-        const res = await fetch("/feedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            qa_id: lastQaId,
-            question: lastQuestion,
-            answer: lastAnswer,
-            rating
-          })
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-          document.getElementById("fb-status").textContent = `Feedback saved (${rating}/5)`;
-          setGlobalStatus("Feedback recorded");
-          await loadSessionMessages(currentSessionId);
-        } else {
-          document.getElementById("fb-status").textContent = `Feedback failed: ${data.detail || "unknown"}`;
-          setGlobalStatus("Feedback failed", true);
-        }
-      }
-
-      refreshSessions();
-    </script>
+    <script src="/ui/app.js" defer></script>
   </body>
 </html>

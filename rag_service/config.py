@@ -24,6 +24,8 @@ RETRIEVAL_K = int(os.getenv("RETRIEVAL_K", "3"))
 PROMPT_NAME = os.getenv("LANGFUSE_PROMPT_NAME", "rag-answer")
 PROMPT_LABEL = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
 LOCAL_PROMPT_VERSION = "local-v1.0"
+GENERATION_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small")
+EVALUATION_MODEL = os.getenv("EVAL_MODEL", GENERATION_MODEL)
 
 LANGFUSE_HOST = env_value("LANGFUSE_BASE_URL") or env_value("LANGFUSE_HOST") or "https://cloud.langfuse.com"
 LANGFUSE_ENVIRONMENT = env_value("LANGFUSE_ENVIRONMENT") or "default"

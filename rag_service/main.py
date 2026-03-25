@@ -3,14 +3,17 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from .config import (
     DB_PATH,
+    EVALUATION_MODEL,
+    GENERATION_MODEL,
     LANGFUSE_ENVIRONMENT,
     LANGFUSE_HOST,
     LOCAL_PROMPT_VERSION,
@@ -82,7 +85,7 @@ def initialize_clients() -> None:
 
     logger.info("Initializing Mistral chat model")
     state.llm = ChatMistralAI(
-        model="mistral-small",
+        model=GENERATION_MODEL,
         temperature=0,
         api_key=env_value("MISTRAL_API_KEY"),
     )
@@ -123,6 +126,15 @@ def ui() -> str:
     except Exception:
         logger.exception("Failed to read UI HTML file: %s", UI_HTML_PATH)
         raise HTTPException(status_code=500, detail="UI file missing")
+
+
+@app.get("/ui/{filename}")
+def ui_asset(filename: str):
+    ui_dir = Path(UI_HTML_PATH).parent
+    file_path = (ui_dir / filename).resolve()
+    if ui_dir not in file_path.parents or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(file_path)
 
 
 @app.post("/ask")
@@ -197,6 +209,8 @@ def ask(req: QueryRequest):
     response = state.llm.invoke(prompt)
     answer = response.content if isinstance(response.content, str) else str(response.content)
     original_answer = answer
+    generation_model = getattr(state.llm, "model", None) or GENERATION_MODEL
+    evaluation_model = EVALUATION_MODEL or generation_model
 
     try:
         eval_result = llm_evaluate(state.llm, req.question, context, answer)
@@ -253,6 +267,8 @@ def ask(req: QueryRequest):
                         output={
                             "session_id": session_id,
                             "qa_id": qa_id,
+                            "generation_model": generation_model,
+                            "evaluation_model": evaluation_model,
                             "answer": answer,
                             "original_answer": original_answer,
                             "evaluation": eval_result,
@@ -287,6 +303,8 @@ def ask(req: QueryRequest):
     result = {
         "session_id": session_id,
         "qa_id": qa_id,
+        "generation_model": generation_model,
+        "evaluation_model": evaluation_model,
         "answer": answer,
         "context": context,
         "chunks": chunks,
@@ -461,6 +479,18 @@ def history_langfuse(limit: int = 100):
         key = qa_id or f"trace:{trace.get('id')}"
         by_key[key] = {
             "qa_id": qa_id,
+            "session_id": input_obj.get("session_id") or output_obj.get("session_id"),
+            "generation_model": (
+                output_obj.get("generation_model")
+                or input_obj.get("generation_model")
+                or GENERATION_MODEL
+            ),
+            "evaluation_model": (
+                output_obj.get("evaluation_model")
+                or input_obj.get("evaluation_model")
+                or EVALUATION_MODEL
+                or GENERATION_MODEL
+            ),
             "asked_at": trace.get("timestamp") or trace.get("createdAt"),
             "question": input_obj.get("question"),
             "answer": output_obj.get("answer"),
