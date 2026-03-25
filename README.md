@@ -165,6 +165,39 @@ Notes:
 - Tests mock vectorstore/LLM and avoid Pinecone/Mistral network calls.
 - Tests use temporary SQLite DB paths.
 
+## RAG Quality Agent
+
+This repo includes an offline quality-evaluation agent:
+
+- Runner: `agents/rag_quality_agent.py`
+- Scoring: `agents/scoring.py`
+- Dataset: `agents/eval_dataset.jsonl`
+- Reports: `reports/quality_report_*.json` and `reports/quality_report_*.md`
+
+Run it against a running API instance:
+
+```bash
+python agents/rag_quality_agent.py --base-url http://127.0.0.1:8000
+```
+
+Useful options:
+
+```bash
+python agents/rag_quality_agent.py --limit 3
+python agents/rag_quality_agent.py --update-baseline
+python agents/rag_quality_agent.py --allow-regression
+```
+
+What it checks:
+- answer rate
+- reject rate
+- average faithfulness/relevance
+- keyword recall from eval dataset expectations
+- model metadata presence in responses
+- latency p50/p95
+
+It fails with non-zero exit code when quality gates fail (or when regression vs baseline is detected unless `--allow-regression` is set).
+
 ## Where Results Are Stored
 
 ## SQLite (local durable store)

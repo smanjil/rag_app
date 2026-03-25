@@ -1,0 +1,6 @@
+{"id":"aws_s3","question":"What does AWS S3 provide?","expected_keywords":["object storage","durable","high availability"]}
+{"id":"aws_ecs","question":"What is AWS ECS?","expected_keywords":["container orchestration","managed","ec2","fargate"]}
+{"id":"dockerfile","question":"What does a Dockerfile do?","expected_keywords":["steps","build","image"]}
+{"id":"containers_persistence","question":"Are containers stateful by default?","expected_keywords":["stateless","external storage","persistence"]}
+{"id":"rag_definition","question":"What is Retrieval-Augmented Generation (RAG)?","expected_keywords":["retrieval","generation","document"]}
+{"id":"pinecone_similarity","question":"Why use Pinecone in this project?","expected_keywords":["similarity search","embeddings","vector"]}
