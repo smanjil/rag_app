@@ -10,7 +10,7 @@ import urllib.error
 from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -36,15 +36,28 @@ THRESHOLD_FAITHFULNESS = float(os.getenv("EVAL_FAITHFULNESS_THRESHOLD", 0.7))
 THRESHOLD_RELEVANCE = float(os.getenv("EVAL_RELEVANCE_THRESHOLD", 0.7))
 
 
-# ✅ ---- ADD HERE ----
-def should_reject(eval_result):
+def _safe_eval_score(value: Any) -> Optional[float]:
     try:
-        return (
-            eval_result["faithfulness"] < THRESHOLD_FAITHFULNESS
-            or eval_result["relevance"] < THRESHOLD_RELEVANCE
-        )
-    except:
-        return True  # fail-safe
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if score < 0.0 or score > 1.0:
+        return None
+    return score
+
+
+def should_reject(eval_result: dict) -> bool:
+    faithfulness = _safe_eval_score(eval_result.get("faithfulness"))
+    relevance = _safe_eval_score(eval_result.get("relevance"))
+
+    # If evaluator output is malformed, do not hard-reject user answers.
+    if faithfulness is None or relevance is None:
+        return False
+
+    return (
+        faithfulness < THRESHOLD_FAITHFULNESS
+        or relevance < THRESHOLD_RELEVANCE
+    )
 
 
 def _env(key: str) -> Optional[str]:
@@ -297,8 +310,8 @@ class QueryRequest(BaseModel):
 
 class FeedbackRequest(BaseModel):
     qa_id: Optional[str] = None
-    question: str
-    answer: str
+    question: Optional[str] = None
+    answer: Optional[str] = None
     rating: int  # 1 (bad) to 5 (good)
 
 
@@ -525,15 +538,24 @@ def ask(req: QueryRequest):
 
     # ---- Generation ----
     response = llm.invoke(prompt)
-    answer = response.content
+    answer = response.content if isinstance(response.content, str) else str(response.content)
     original_answer = answer
 
     # ✅ ---- EVALUATION GOES HERE ----
-    eval_result = llm_evaluate(
-        req.question,
-        context,
-        answer,
-    )
+    try:
+        eval_result = llm_evaluate(
+            req.question,
+            context,
+            answer,
+        )
+    except Exception:
+        logger.exception("Evaluation failed; continuing without rejection")
+        eval_result = {
+            "faithfulness": None,
+            "relevance": None,
+            "verdict": "unknown",
+            "error": "evaluation_failed",
+        }
 
     # ✅ ---- ADD HERE ----
     reject = should_reject(eval_result)
@@ -547,6 +569,7 @@ def ask(req: QueryRequest):
             "faithfulness": THRESHOLD_FAITHFULNESS,
             "relevance": THRESHOLD_RELEVANCE,
         },
+        "reason": "threshold_breach" if reject else "accepted_or_eval_unavailable",
     }
 
     if reject:
@@ -645,8 +668,7 @@ def ask(req: QueryRequest):
             "trace_id": trace_id,
         }
     )
-    print(res)
-
+    logger.debug("Returning /ask response for qa_id=%s", qa_id)
     return res
 
 
@@ -671,6 +693,11 @@ def feedback(req: FeedbackRequest):
                     item["rated_at"] = datetime.now(timezone.utc).isoformat()
                     break
         else:
+            if not req.question or not req.answer:
+                raise HTTPException(
+                    status_code=400,
+                    detail="question and answer are required when qa_id is not provided",
+                )
             with _db_conn() as conn:
                 row = conn.execute(
                     """
@@ -703,6 +730,8 @@ def feedback(req: FeedbackRequest):
                 pass
             if hasattr(_client, "flush"):
                 _client.flush()
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Failed to record feedback in Langfuse")
         raise HTTPException(status_code=500, detail="failed to record feedback")
