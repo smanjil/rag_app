@@ -433,6 +433,41 @@ def ingest_to_pinecone(
             )
         )
 
+    # Add a synthetic overview document so "list all talks" queries have a direct hit
+    if talks:
+        overview_lines = [
+            f"ML Prague 2026 — {city}, {country} — Conference Talk List",
+            f"Date: {talks[0].get('date', '')}",
+            "",
+            "Talks presented at ML Prague 2026:",
+        ]
+        for t in talks:
+            line = f"- \"{t['title']}\" by {t['speaker']}"
+            if t.get("affiliation"):
+                line += f" ({t['affiliation']})"
+            overview_lines.append(line)
+
+        docs.append(
+            Document(
+                page_content="\n".join(overview_lines),
+                metadata={
+                    "source": "mlprague",
+                    "slide_index": -1,
+                    "slide_title": "Conference Overview",
+                    "timestamp": 0.0,
+                    "timestamp_fmt": "0:00",
+                    "talk_title": "",
+                    "speaker": "",
+                    "affiliation": "",
+                    "date": talks[0].get("date", ""),
+                    "city": city,
+                    "country": country,
+                    "has_slide_text": False,
+                    "has_transcript": False,
+                },
+            )
+        )
+
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunks = splitter.split_documents(docs)
     logger.info(

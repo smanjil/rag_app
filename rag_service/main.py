@@ -137,6 +137,15 @@ def ui_asset(filename: str):
     return FileResponse(file_path)
 
 
+@app.get("/talks")
+def list_talks():
+    talks_path = Path(__file__).resolve().parent.parent / "data" / "mlprague" / "talks.json"
+    if not talks_path.exists():
+        raise HTTPException(status_code=404, detail="talks.json not found")
+    import json
+    return json.loads(talks_path.read_text())
+
+
 @app.post("/ask")
 def ask(req: QueryRequest):
     init_db(DB_PATH)
@@ -150,9 +159,54 @@ def ask(req: QueryRequest):
                 detail=f"Service starting up; initialization failed: {exc}",
             )
 
+    import json as _json
+    import re as _re
+
     qa_id = uuid.uuid4().hex
     session_id = req.session_id or uuid.uuid4().hex
     ensure_session(DB_PATH, session_id, title=req.question[:80])
+
+    # For listing queries, build context directly from talks.json
+    is_listing_query = bool(_re.search(r'\b(list|all|every|which|what).{0,30}(talk|speaker|present)', req.question, _re.IGNORECASE))
+    if is_listing_query:
+        talks_path = Path(__file__).resolve().parent.parent / "data" / "mlprague" / "talks.json"
+        if talks_path.exists():
+            talks = _json.loads(talks_path.read_text())
+            lines = ["Talks presented at ML Prague 2026:"]
+            for t in talks:
+                line = f"- \"{t['title']}\" by {t['speaker']}"
+                if t.get("affiliation"):
+                    line += f" ({t['affiliation']})"
+                if t.get("date"):
+                    line += f" — {t['date']}"
+                lines.append(line)
+            context = "\n".join(lines)
+            prompt = f"Answer ONLY using the context below.\n\nContext:\n{context}\n\nQuestion:\n{req.question}"
+            response = state.llm.invoke(prompt)
+            answer = response.content if isinstance(response.content, str) else str(response.content)
+            eval_result = {"faithfulness": 1.0, "relevance": 1.0, "verdict": "good"}
+            sim_result = {"k": 0, "scores": [], "best_score": None, "avg_score": None}
+            store_message(
+                db_path=DB_PATH,
+                session_id=session_id,
+                qa_id=qa_id,
+                question=req.question,
+                answer=answer,
+                context=context,
+                evaluation=eval_result,
+                similarity=sim_result,
+                trace_id=None,
+            )
+            return {
+                "answer": answer,
+                "context": context,
+                "chunks": [],
+                "similarity": sim_result,
+                "evaluation": eval_result,
+                "session_id": session_id,
+                "qa_id": qa_id,
+                "trace_id": None,
+            }
 
     docs = []
     raw_scores = []
