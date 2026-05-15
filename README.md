@@ -1,57 +1,149 @@
-# RAG App
+# RAG App — ML Prague 2026
 
-Production-style FastAPI RAG service with:
-- Pinecone retrieval
-- Mistral generation
-- Langfuse tracing + prompt management
-- SQLite-backed sessions/messages
-- Built-in UI (`/`)
-- Checked-in OpenAPI spec (`openapi/openapi.json`)
-- Pytest suite for API + logic paths
-- Docker + docker-compose runtime
+Production-style RAG service + MCP server built on top of ML Prague 2026 conference content.
 
-## Architecture (Restructured)
+- **RAG service** (`rag_service/`) — FastAPI app: Pinecone retrieval, Mistral generation, Langfuse tracing, SQLite sessions, built-in UI
+- **MCP server** (`mcp_server/`) — standalone Model Context Protocol server exposing conference content as tools for Claude Desktop / Claude Code
+- **Ingest pipeline** (`scripts/process_mlprague.py`) — 5-phase pipeline: WhisperX transcription → slide frame extraction → Mistral Pixtral OCR → transcript-slide alignment → Pinecone ingestion
 
-- `app.py`: compatibility entrypoint (`uvicorn app:app`)
-- `rag_service/main.py`: app lifecycle + routes
-- `rag_service/config.py`: env and runtime configuration
-- `rag_service/models.py`: request schemas
-- `rag_service/database.py`: SQLite persistence helpers
-- `rag_service/logic.py`: prompt/evaluation/rejection/langfuse helpers
-- `scripts/export_openapi.py`: exports OpenAPI artifact
-- `openapi/openapi.json`: generated API contract
-- `tests/`: pytest suite
+## Repository Layout
 
-## What Changed
+```
+rag_app/
+  rag_service/          # FastAPI RAG app
+    main.py             # app lifecycle + routes
+    config.py           # env and runtime config
+    models.py           # request schemas
+    database.py         # SQLite persistence
+    logic.py            # prompt / eval / Langfuse helpers
+  mcp_server/           # MCP server (standalone, separately testable)
+    server.py           # FastMCP entrypoint — registers 3 tools
+    config.py           # env loading, paths, constants
+    tools/
+      talks.py          # list_talks(), get_talk_by_title()
+      search.py         # search_conference() via Pinecone
+    tests/
+      test_tools.py     # 15 unit tests (no credentials needed)
+    requirements-mcp.txt
+    README.md
+  agents/               # offline RAG quality evaluation agent
+  scripts/
+    process_mlprague.py # end-to-end conference video ingest pipeline
+    export_openapi.py   # export OpenAPI artifact
+  data/mlprague/        # conference data (talks.json, transcripts, slide texts)
+  openapi/openapi.json  # checked-in API contract
+  tests/                # pytest suite for RAG service
+  app.py                # compatibility entrypoint
+  requirements.txt      # RAG service deps
+  requirements-dev.txt  # dev/test + pipeline deps
+  requirements-mcp.txt  # MCP server deps
+```
 
-Recent upgrade includes:
-- Refactor from single-file app to layered package modules.
-- Lazy heavy imports (`langchain`, `pinecone`, `langfuse`) for better testability and OpenAPI export reliability.
-- Startup hardening: dependency init failures log and retry lazily in request path.
-- OpenAPI spec export and checked-in API contract file.
-- Container runtime improvements (non-root user, healthcheck, compose file, persistent SQLite volume).
-- Comprehensive pytest coverage for route behavior and evaluation gating logic.
+## Data
 
-## Requirements
+Conference data lives under `data/mlprague/`:
 
-- Python 3.11+
-- Pinecone API key + index
+| File | Description |
+|------|-------------|
+| `talks.json` | 10 talks with title, speaker, affiliation, date, slide range |
+| `transcript.json` | WhisperX word-aligned transcript |
+| `slide_texts.json` | Mistral Pixtral OCR output per slide frame |
+| `aligned.json` | Merged transcript + slide text per timestamp |
+
+Large binary files (video, slide frames) are gitignored.
+
+## MCP Server
+
+Exposes three tools to any MCP-compatible client:
+
+| Tool | Description |
+|------|-------------|
+| `list_talks` | Return all talks (title, speaker, affiliation, date) |
+| `get_talk` | Look up a talk by full or partial title |
+| `search_conference` | Semantic search over transcripts and slides |
+
+### Setup
+
+```bash
+python -m venv .venv_mcp
+source .venv_mcp/bin/activate
+pip install -r mcp_server/requirements-mcp.txt
+```
+
+### Run (stdio — for Claude Desktop)
+
+```bash
+python -m mcp_server.server
+```
+
+### Claude Desktop config
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ml-prague-2026": {
+      "command": "/path/to/rag_app/.venv_mcp/bin/python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "/path/to/rag_app",
+      "env": {
+        "PYTHONPATH": "/path/to/rag_app"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add ml-prague-2026 -- .venv_mcp/bin/python -m mcp_server.server
+```
+
+### MCP Tests
+
+Run without credentials — Pinecone and SentenceTransformer are mocked:
+
+```bash
+pytest mcp_server/tests/ -v
+```
+
+## Ingest Pipeline
+
+Processes raw conference video into Pinecone vectors in 5 phases:
+
+```
+Phase 1 — WhisperX transcription (GPU)
+Phase 2 — Slide frame extraction + pHash deduplication
+Phase 3 — Mistral Pixtral OCR per slide frame
+Phase 4 — Transcript-slide alignment by timestamp
+Phase 5 — Pinecone ingestion with enriched metadata
+```
+
+Each chunk stored in Pinecone includes: talk title, speaker, affiliation, date, city, country, slide index, and timestamp.
+
+```bash
+pip install -r requirements-pipeline.txt
+
+# Full pipeline
+python scripts/process_mlprague.py
+
+# Resume from a specific phase
+python scripts/process_mlprague.py --skip-transcription   # skip Phase 1
+python scripts/process_mlprague.py --skip-slides          # skip Phases 1+2
+```
+
+## RAG Service
+
+### Requirements
+
+- Python 3.9+
+- Pinecone API key + index (`ml-conference`, dimension 384, cosine)
 - Mistral API key
-- Langfuse keys (recommended; `/history/langfuse` requires them)
+- Langfuse keys (optional; `/history/langfuse` requires them)
 
-Install runtime deps:
-
-```bash
-pip install -r requirements.txt
-```
-
-Install test deps:
-
-```bash
-pip install -r requirements-dev.txt
-```
-
-## Environment Variables
+### Environment Variables
 
 Create `.env` in repo root:
 
@@ -59,7 +151,7 @@ Create `.env` in repo root:
 MISTRAL_API_KEY=...
 
 PINECONE_API_KEY=...
-PINECONE_INDEX_NAME=test-index
+PINECONE_INDEX_NAME=ml-conference
 PINECONE_ENV=us-east-1
 
 LANGFUSE_SECRET_KEY=...
@@ -69,118 +161,70 @@ LANGFUSE_PROMPT_NAME=rag-answer
 LANGFUSE_PROMPT_LABEL=production
 LANGFUSE_ENVIRONMENT=default
 
-EVAL_FAITHFULNESS_THRESHOLD=0.7
-EVAL_RELEVANCE_THRESHOLD=0.7
-RETRIEVAL_K=3
+EVAL_FAITHFULNESS_THRESHOLD=0.3
+EVAL_RELEVANCE_THRESHOLD=0.3
+RETRIEVAL_K=10
 RAG_DB_PATH=./rag_app.db
 ```
 
-## Run Locally
-
-1. Create env + install:
+### Run Locally
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-2. Ingest `data/*.txt` into Pinecone:
-
-```bash
-python ingest.py
-```
-
-3. Run app:
-
-```bash
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-4. Open:
+Open:
 - UI: `http://localhost:8000/`
 - Docs: `http://localhost:8000/docs`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
 
-## OpenAPI Specification File
-
-Export checked-in spec:
-
-```bash
-python scripts/export_openapi.py
-```
-
-Artifact path:
-- `openapi/openapi.json`
-
-This file is OpenAPI-compatible and can be used by gateways, SDK generators, or API tooling.
-
-## Container Run
-
-## Docker
+### Docker
 
 ```bash
 docker build -t rag-app:latest .
 docker run --rm -p 8000:8000 --env-file .env -e RAG_DB_PATH=/app/storage/rag_app.db -v "$(pwd)/storage:/app/storage" rag-app:latest
 ```
 
-## Docker Compose
+### Docker Compose
 
 ```bash
 mkdir -p storage
 docker compose up --build
 ```
 
-App available at `http://localhost:8000`.
+### API Routes
 
-## API Routes
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | UI page |
+| `POST` | `/ask` | Ask a question — retrieves context, generates answer, evaluates, persists |
+| `GET` | `/talks` | List all ML Prague 2026 talks |
+| `POST` | `/feedback` | Submit rating by `qa_id` |
+| `GET` | `/history` | In-process history |
+| `POST` | `/history/update` | Override answer/rating |
+| `GET` | `/history/langfuse` | Merged Langfuse traces and feedback |
+| `GET` | `/sessions` | List SQLite sessions |
+| `GET` | `/sessions/{session_id}/messages` | List messages in a session |
 
-- `GET /` UI page
-- `POST /ask` ask question, retrieve context, generate answer, evaluate, persist
-- `POST /feedback` submit rating by `qa_id` or by `question`+`answer`
-- `GET /history` in-memory history for running process
-- `POST /history/update` override answer/rating by `qa_id` or `trace_id`
-- `GET /history/langfuse` merged Langfuse traces and feedback
-- `GET /sessions` list SQLite sessions
-- `GET /sessions/{session_id}/messages` list SQLite messages
-
-## Testing
-
-Run full suite:
+### Testing
 
 ```bash
-pytest
+pytest tests/ -v        # RAG service tests
+pytest mcp_server/tests/ -v  # MCP server tests (no credentials needed)
+pytest -v               # all tests
 ```
-
-Current test coverage includes:
-- `/ask` happy path and persistence
-- `/ask` rejection path for low evaluation scores
-- `/ask` evaluator-failure fallback path
-- `/feedback` success and validation failures
-- `/history/update` validation failures
-- `/history/langfuse` merge + override behavior
-- logic tests for `should_reject` edge cases
-
-Notes:
-- Tests mock vectorstore/LLM and avoid Pinecone/Mistral network calls.
-- Tests use temporary SQLite DB paths.
 
 ## RAG Quality Agent
 
-This repo includes an offline quality-evaluation agent:
-
-- Runner: `agents/rag_quality_agent.py`
-- Scoring: `agents/scoring.py`
-- Dataset: `agents/eval_dataset.jsonl`
-- Reports: `reports/quality_report_*.json` and `reports/quality_report_*.md`
-
-Run it against a running API instance:
+Offline evaluation agent that runs against a live API instance:
 
 ```bash
 python agents/rag_quality_agent.py --base-url http://127.0.0.1:8000
 ```
 
-Useful options:
+Options:
 
 ```bash
 python agents/rag_quality_agent.py --limit 3
@@ -188,72 +232,30 @@ python agents/rag_quality_agent.py --update-baseline
 python agents/rag_quality_agent.py --allow-regression
 ```
 
-What it checks:
-- answer rate
-- reject rate
-- average faithfulness/relevance
-- keyword recall from eval dataset expectations
-- model metadata presence in responses
-- latency p50/p95
+Checks: answer rate, reject rate, avg faithfulness/relevance, keyword recall, latency p50/p95.
 
-It fails with non-zero exit code when quality gates fail (or when regression vs baseline is detected unless `--allow-regression` is set).
+## Storage
 
-## Where Results Are Stored
+### SQLite
 
-## SQLite (local durable store)
-
-Default file:
-- `rag_app.db` (or `RAG_DB_PATH` override)
-
-Tables:
-- `sessions`
-- `messages`
-
-Inspect manually:
+Default: `rag_app.db` (override with `RAG_DB_PATH`)
 
 ```bash
 sqlite3 rag_app.db
-.tables
 SELECT session_id, title, updated_at FROM sessions ORDER BY updated_at DESC;
-SELECT qa_id, session_id, question, rating, trace_id, created_at FROM messages ORDER BY created_at DESC LIMIT 20;
+SELECT qa_id, question, rating, created_at FROM messages ORDER BY created_at DESC LIMIT 20;
 ```
 
-## Langfuse (remote)
+### Langfuse
 
-Traces/observations include:
-- `rag-query`
-- `prompt`
-- `generation`
-- `decision`
-- `user-feedback`
+Traces include `rag-query`, `prompt`, `generation`, `decision`, `user-feedback`.
 
-View in Langfuse UI or via:
-- `GET /history/langfuse?limit=100`
-
-## API/UI Response Surface
-
-Immediate `/ask` response includes:
-- `answer`
-- `context`
-- `chunks` (with `similarity_score`)
-- `similarity` summary
-- `evaluation`
-- `session_id`, `qa_id`, `trace_id`
+View via `GET /history/langfuse?limit=100` or in the Langfuse UI.
 
 ## Troubleshooting
 
-- `503 Service starting up`:
-  - verify `.env` keys
-  - verify external service/network access
-
-- `/history/langfuse` errors:
-  - verify Langfuse keys and base URL
-  - ensure `limit <= 100`
-
-- Feedback `400` errors:
-  - rating must be `1..5`
-  - when `qa_id` omitted, both `question` and `answer` are required
-
-- Container build large/slow:
-  - ensure `.dockerignore` is respected
-  - avoid copying local `.venv` and DB artifacts
+- **`503 Service starting up`** — verify `.env` keys and network access to Pinecone/Mistral
+- **MCP server `No module named 'mcp_server'`** — ensure `PYTHONPATH` is set to the repo root in the Claude Desktop config
+- **Pinecone dimension mismatch** — index must be dimension 384 (all-MiniLM-L6-v2); delete and recreate if needed
+- **`/history/langfuse` errors** — verify Langfuse keys; `limit` must be ≤ 100
+- **Feedback `400`** — rating must be 1–5; when `qa_id` is omitted, both `question` and `answer` are required
