@@ -1,5 +1,0 @@
-Retrieval-Augmented Generation (RAG) combines document retrieval with language generation.
-
-Embeddings convert text into dense vectors that capture semantic meaning.
-
-Vector databases like Pinecone enable fast similarity search over embeddings.

@@ -1,2 +1,8 @@
 pytest>=8.3.0
 httpx>=0.28.0
+
+# ML Prague processing pipeline
+anthropic>=0.40.0
+whisperx
+Pillow
+imagehash
