@@ -1,6 +1,15 @@
 .env
 .venv/
+.venv_pipeline/
 __pycache__/
 .pytest_cache/
 rag_app.db
 storage/
+
+# ML Prague conference data — large/generated files
+data/mlprague/conference_video/
+data/mlprague/slide_video/
+data/mlprague/slide_frames/
+data/mlprague/transcript.json
+data/mlprague/slide_texts.json
+data/mlprague/aligned.json

@@ -1,0 +1,19 @@
+# Dependencies for scripts/process_mlprague.py
+# Requires Python 3.13 (whisperx does not support 3.14+)
+# Install with: .venv_pipeline/bin/pip install -r requirements-pipeline.txt
+
+whisperx
+mistralai
+geopy
+Pillow
+imagehash
+python-dotenv
+
+# Pinecone / LangChain (for ingest phase)
+langchain
+langchain-community
+langchain-huggingface==1.2.1
+langchain-pinecone
+langchain-text-splitters
+pinecone
+sentence-transformers

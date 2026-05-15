@@ -1,0 +1,82 @@
+[
+  {
+    "slide_start": 1,
+    "slide_end": 45,
+    "title": "Why Good Models Fail in Production: And How to Build Systems That Don't",
+    "speaker": "Oleksandr Pyvovar",
+    "affiliation": "Meta",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 47,
+    "slide_end": 79,
+    "title": "Practical Improvements to Sequential Recommendations for Search Reranking",
+    "speaker": "Manikanth Reddy Gonchi",
+    "affiliation": "Bloomreach",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 81,
+    "slide_end": 117,
+    "title": "Building Proprietary Transformers at Scale: The Good, The Bad, and The AWS Bill",
+    "speaker": "Radek Svoboda",
+    "affiliation": "Rankacy AI",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 119,
+    "slide_end": 390,
+    "title": "Real-Time Digital Avatars for Online Entertainment",
+    "speaker": "Weipeng Xu",
+    "affiliation": "Valka.AI",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 393,
+    "slide_end": 418,
+    "title": "Contrastive Forecasting: Latent-Space Prediction for Time Series via Joint Embedding",
+    "speaker": "Jeremy Cochoy",
+    "affiliation": "Redstone Solutions",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 420,
+    "slide_end": 458,
+    "title": "Building State-of-the-Art Text and Multimodal Embedding Models",
+    "speaker": "Yauhen Babakhin",
+    "affiliation": "NVIDIA / Kaggle Grandmaster",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 460,
+    "slide_end": 491,
+    "title": "Hybrid Search with AI Embeddings: From Theory to Production",
+    "speaker": "Tomáš Rokos",
+    "affiliation": "",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 495,
+    "slide_end": 532,
+    "title": "The AI-Native Transformation: Re-architecting Engineering for the Agentic Era",
+    "speaker": "Peter Krejzl",
+    "affiliation": "Emplifi",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 534,
+    "slide_end": 546,
+    "title": "Designing for Impact: How UX/UI Shapes Productivity Measurement of LLM Tools",
+    "speaker": "Martin Hajný",
+    "affiliation": "Raiffeisenbank",
+    "date": "2026-05-06"
+  },
+  {
+    "slide_start": 547,
+    "slide_end": 564,
+    "title": "When Benchmarks Aren't Enough: Evaluation-Driven Development in Legal AI",
+    "speaker": "Jonáš Kratochvíl",
+    "affiliation": "Filevine",
+    "date": "2026-05-06"
+  }
+]
